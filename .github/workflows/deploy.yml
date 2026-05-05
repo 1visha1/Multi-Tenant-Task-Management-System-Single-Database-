@@ -28,6 +28,9 @@ jobs:
       - name: Save Docker image
         run: docker save management-app -o app.tar
 
+      - name: Fix permissions on tar file 
+        run: chmod 644 app.tar
+
       - name: Copy image to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
