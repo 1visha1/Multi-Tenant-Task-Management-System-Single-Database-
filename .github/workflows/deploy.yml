@@ -8,7 +8,6 @@ jobs:
 build-and-deploy:
 runs-on: ubuntu-latest
 
-```
 steps:
   - name: Checkout code
     uses: actions/checkout@v4
@@ -48,4 +47,4 @@ steps:
         docker stop app || true
         docker rm app || true
         docker run -d -p 8080:8080 --name app management-app
-```
+
