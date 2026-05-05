@@ -49,8 +49,8 @@ public class UserService {
 
 		Integer tenantId = currentUser.getTenantId();
 		
-		List<User> users = userRepository.findByTenantId(tenantId);
-		return users;
+		return userRepository.findByTenantId(tenantId);
+
 	}
 	
 	public boolean isUserExists(Integer id) {
@@ -62,4 +62,7 @@ public class UserService {
 	            .orElseThrow(() -> new UserNotFoundException("User not found!"));
 	}
 
+    public Optional<User> findById(Integer userId) {
+        return userRepository.findById(userId);
+    }
 }

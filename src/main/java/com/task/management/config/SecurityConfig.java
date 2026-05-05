@@ -42,6 +42,7 @@ public class SecurityConfig {
 	
 	        http
 	            .csrf(csrf -> csrf.disable())
+
 	            .cors(cors -> logger.info("CORS support enabled in Spring Security"))
 	            .authorizeHttpRequests(auth -> {
 	                logger.info("Setting security rules for HTTP requests");

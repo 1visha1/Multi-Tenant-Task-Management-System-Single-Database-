@@ -2,6 +2,7 @@ package com.task.management.service;
 
 import java.util.Collections;
 
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,22 +21,18 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class CustomeUserDetailsService implements UserDetailsService {
 
    
-    private UserRepository vendorRepository;
+    private final UserRepository userRepository;
     
-    CustomeUserDetailsService(@Autowired UserRepository vendorRepository) {
-		this.vendorRepository = vendorRepository;
-	}
-    
-    private static final Logger logger = LoggerFactory.getLogger(CustomeUserDetailsService.class);
 
 
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
 
-        User user = vendorRepository.findByEmailId(email)
+        User user = userRepository.findByEmailId(email)
                 .orElseThrow(() ->
                         new UsernameNotFoundException("User not found with email: " + email));
 

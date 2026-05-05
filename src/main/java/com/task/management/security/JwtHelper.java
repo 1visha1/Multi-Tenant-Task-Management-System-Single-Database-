@@ -61,11 +61,10 @@ public class JwtHelper {
 
     // for retrieving any information from token we will need the secret key
     private Claims getAllClaimsFromToken(String token) {
-        try {
-            return Jwts.parser().setSigningKey(secret).parseClaimsJws(token).getBody();
-        } catch (Exception e) {
-            throw e;
-        }
+        return Jwts.parser()
+                .setSigningKey(secret)
+                .parseClaimsJws(token)
+                .getBody();
     }
 
     // check if the token has expired

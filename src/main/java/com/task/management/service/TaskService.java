@@ -1,6 +1,8 @@
 package com.task.management.service;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 import com.task.management.exception.UserNotFoundException;
 import org.springframework.security.core.Authentication;
@@ -26,6 +28,10 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final UserService userService;
+
+    // Fix 3: Allowlist for valid status values
+    private static final Set<String> ALLOWED_STATUSES =
+            Set.of("TODO", "IN_PROGRESS", "DONE", "CANCELLED");
 
     private CustomUserDetails getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -55,13 +61,18 @@ public class TaskService {
             throw new IllegalArgumentException("Task status is required");
         }
 
+        // Fix 3: Validate status against allowlist
+        if (!ALLOWED_STATUSES.contains(newTask.getStatus().trim().toUpperCase())) {
+            throw new IllegalArgumentException("Invalid status value: " + newTask.getStatus());
+        }
+
         CustomUserDetails currentUser = getCurrentUser();
 
         Task task = Task.builder()
                 .tenantId(currentUser.getTenantId())
                 .title(newTask.getTitle().trim())
                 .description(newTask.getDescription() != null ? newTask.getDescription().trim() : null)
-                .status(newTask.getStatus().trim())
+                .status(newTask.getStatus().trim().toUpperCase())
                 .build();
 
         taskRepository.save(task);
@@ -74,8 +85,10 @@ public class TaskService {
 
         List<Task> tasks = taskRepository.findByTenantId(currentUser.getTenantId());
 
+        // Fix 2: Return empty list instead of null
         if (tasks == null || tasks.isEmpty()) {
             log.warn("No tasks found for tenantId: {}", currentUser.getTenantId());
+            return Collections.emptyList();
         }
 
         return tasks;
@@ -92,20 +105,26 @@ public class TaskService {
         }
 
         if (!userService.isUserExists(userId)) {
-            throw new UsernameNotFoundException("User does not exist");
+            throw new UsernameNotFoundException("Invalid credentials");
         }
 
         CustomUserDetails currentUser = getCurrentUser();
 
+        // Fix 1: Verify target user belongs to the same tenant
+        User targetUser = userService.findById(userId)
+                .orElseThrow(() -> new UsernameNotFoundException("Invalid credentials"));
+
+        if (!targetUser.getTenantId().equals(currentUser.getTenantId())) {
+            throw new UnauthorizedActionException("Cross-tenant user assignment not allowed");
+        }
+
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new TaskNotFoundException("Task not found"));
 
-        // Tenant validation (important for multi-tenant systems)
         if (!task.getTenantId().equals(currentUser.getTenantId())) {
             throw new UnauthorizedActionException("Cross-tenant task assignment not allowed");
         }
 
-        // Optional: prevent reassignment without rules
         if (task.getAssignedTo() != null && task.getAssignedTo().equals(userId)) {
             log.warn("Task {} is already assigned to user {}", taskId, userId);
             return;
@@ -127,6 +146,11 @@ public class TaskService {
             throw new IllegalArgumentException("Status cannot be empty");
         }
 
+        // Fix 3: Validate status against allowlist
+        if (!ALLOWED_STATUSES.contains(status.trim().toUpperCase())) {
+            throw new IllegalArgumentException("Invalid status value: " + status);
+        }
+
         CustomUserDetails currentUser = getCurrentUser();
 
         User user = userService.findByUserEmail(currentUser.getUsername());
@@ -137,12 +161,10 @@ public class TaskService {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new TaskNotFoundException("Task not found"));
 
-        // Tenant validation
         if (!task.getTenantId().equals(currentUser.getTenantId())) {
             throw new UnauthorizedActionException("Cross-tenant access denied");
         }
 
-        // Assignment validation
         if (task.getAssignedTo() == null) {
             throw new UnauthorizedActionException("Task is not assigned to any user");
         }
@@ -151,7 +173,7 @@ public class TaskService {
             throw new UnauthorizedActionException("You are not allowed to update this task");
         }
 
-        task.setStatus(status.trim());
+        task.setStatus(status.trim().toUpperCase());
         taskRepository.save(task);
 
         log.info("Task {} status updated to {}", taskId, status);

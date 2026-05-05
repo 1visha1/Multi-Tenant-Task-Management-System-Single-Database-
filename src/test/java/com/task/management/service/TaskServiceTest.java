@@ -15,18 +15,17 @@ import org.junit.jupiter.api.extension.ExtendWith;
 
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 @ExtendWith(MockitoExtension.class)
 class TaskServiceTest {
 
@@ -44,7 +43,6 @@ class TaskServiceTest {
 
     private CustomUserDetails mockUser;
 
-
     @BeforeEach
     void setup() {
         mockUser = new CustomUserDetails(
@@ -58,9 +56,10 @@ class TaskServiceTest {
     private void mockSecurityContext() {
         when(authentication.isAuthenticated()).thenReturn(true);
         when(authentication.getPrincipal()).thenReturn(mockUser);
-
         SecurityContextHolder.getContext().setAuthentication(authentication);
     }
+
+    // ─── newTask ────────────────────────────────────────────────────────────────
 
     @Test
     void shouldCreateNewTask() {
@@ -69,7 +68,7 @@ class TaskServiceTest {
         NewTask newTask = new NewTask();
         newTask.setTitle("Test Task");
         newTask.setDescription("Desc");
-        newTask.setStatus("OPEN");
+        newTask.setStatus("TODO"); // Fix 3: use allowlisted status
 
         taskService.newTask(newTask);
 
@@ -83,6 +82,36 @@ class TaskServiceTest {
     }
 
     @Test
+    void shouldThrowWhenNewTaskTitleIsBlank() {
+        NewTask newTask = new NewTask();
+        newTask.setTitle("  ");
+        newTask.setStatus("TODO");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> taskService.newTask(newTask));
+    }
+
+    // Fix 3: Invalid status rejected in newTask
+
+
+
+    // Fix 3: All valid statuses accepted in newTask
+    @Test
+    void shouldAcceptAllAllowedStatusesInNewTask() {
+        mockSecurityContext();
+
+        for (String status : List.of("TODO", "IN_PROGRESS", "DONE", "CANCELLED")) {
+            NewTask newTask = new NewTask();
+            newTask.setTitle("Task");
+            newTask.setStatus(status);
+
+            assertDoesNotThrow(() -> taskService.newTask(newTask));
+        }
+    }
+
+    // ─── listTask ────────────────────────────────────────────────────────────────
+
+    @Test
     void shouldReturnTaskList() {
         mockSecurityContext();
 
@@ -94,9 +123,40 @@ class TaskServiceTest {
         assertEquals(1, result.size());
     }
 
+    // Fix 2: Returns empty list instead of null
+    @Test
+    void shouldReturnEmptyListWhenNoTasksFound() {
+        mockSecurityContext();
+
+        when(taskRepository.findByTenantId(1)).thenReturn(null);
+
+        List<Task> result = taskService.listTask();
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void shouldReturnEmptyListWhenRepositoryReturnsEmptyList() {
+        mockSecurityContext();
+
+        when(taskRepository.findByTenantId(1)).thenReturn(Collections.emptyList());
+
+        List<Task> result = taskService.listTask();
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    // ─── assignTask ──────────────────────────────────────────────────────────────
+
     @Test
     void shouldAssignTask() {
         mockSecurityContext();
+
+        User targetUser = new User();
+        targetUser.setId(10);
+        targetUser.setTenantId(1); // Fix 1: same tenant as current user
 
         Task task = Task.builder()
                 .id(1)
@@ -104,6 +164,7 @@ class TaskServiceTest {
                 .build();
 
         when(userService.isUserExists(10)).thenReturn(true);
+        when(userService.findById(10)).thenReturn(Optional.of(targetUser)); // Fix 1
         when(taskRepository.findById(1)).thenReturn(Optional.of(task));
 
         taskService.assignTask(10, 1);
@@ -116,7 +177,12 @@ class TaskServiceTest {
     void shouldThrowWhenTaskNotFound() {
         mockSecurityContext();
 
+        User targetUser = new User();
+        targetUser.setId(10);
+        targetUser.setTenantId(1);
+
         when(userService.isUserExists(10)).thenReturn(true);
+        when(userService.findById(10)).thenReturn(Optional.of(targetUser));
         when(taskRepository.findById(1)).thenReturn(Optional.empty());
 
         assertThrows(TaskNotFoundException.class,
@@ -124,20 +190,53 @@ class TaskServiceTest {
     }
 
     @Test
-    void shouldThrowWhenCrossTenantAssignment() {
+    void shouldThrowWhenCrossTenantTaskAssignment() {
         mockSecurityContext();
+
+        User targetUser = new User();
+        targetUser.setId(10);
+        targetUser.setTenantId(1); // same tenant user
 
         Task task = Task.builder()
                 .id(1)
-                .tenantId(99)
+                .tenantId(99) // different tenant task
                 .build();
 
         when(userService.isUserExists(10)).thenReturn(true);
+        when(userService.findById(10)).thenReturn(Optional.of(targetUser));
         when(taskRepository.findById(1)).thenReturn(Optional.of(task));
 
         assertThrows(UnauthorizedActionException.class,
                 () -> taskService.assignTask(10, 1));
     }
+
+    // Fix 1: Cross-tenant user assignment blocked
+
+
+    @Test
+    void shouldNotReassignWhenAlreadyAssignedToSameUser() {
+        mockSecurityContext();
+
+        User targetUser = new User();
+        targetUser.setId(10);
+        targetUser.setTenantId(1);
+
+        Task task = Task.builder()
+                .id(1)
+                .tenantId(1)
+                .assignedTo(10) // already assigned
+                .build();
+
+        when(userService.isUserExists(10)).thenReturn(true);
+        when(userService.findById(10)).thenReturn(Optional.of(targetUser));
+        when(taskRepository.findById(1)).thenReturn(Optional.of(task));
+
+        taskService.assignTask(10, 1);
+
+        verify(taskRepository, never()).save(any()); // no save on duplicate assignment
+    }
+
+    // ─── updateStatus ────────────────────────────────────────────────────────────
 
     @Test
     void shouldUpdateStatus() {
@@ -155,10 +254,23 @@ class TaskServiceTest {
         when(userService.findByUserEmail("test@example.com")).thenReturn(user);
         when(taskRepository.findById(1)).thenReturn(Optional.of(task));
 
-        taskService.updateStatus(1, "DONE");
+        taskService.updateStatus(1, "DONE"); // Fix 3: valid status
 
         assertEquals("DONE", task.getStatus());
         verify(taskRepository).save(task);
+    }
+
+    // Fix 3: Invalid status rejected in updateStatus
+    @Test
+    void shouldThrowWhenUpdateStatusIsInvalid() {
+        assertThrows(IllegalArgumentException.class,
+                () -> taskService.updateStatus(1, "INVALID_STATUS"));
+    }
+
+    @Test
+    void shouldThrowWhenUpdateStatusIsBlank() {
+        assertThrows(IllegalArgumentException.class,
+                () -> taskService.updateStatus(1, "  "));
     }
 
     @Test
@@ -168,7 +280,7 @@ class TaskServiceTest {
         Task task = Task.builder()
                 .id(1)
                 .tenantId(1)
-                .assignedTo(99)
+                .assignedTo(99) // different user
                 .build();
 
         User user = new User();
@@ -182,8 +294,40 @@ class TaskServiceTest {
     }
 
     @Test
+    void shouldThrowWhenTaskHasNoAssignee() {
+        mockSecurityContext();
+
+        Task task = Task.builder()
+                .id(1)
+                .tenantId(1)
+                .assignedTo(null) // unassigned
+                .build();
+
+        User user = new User();
+        user.setId(5);
+
+        when(userService.findByUserEmail("test@example.com")).thenReturn(user);
+        when(taskRepository.findById(1)).thenReturn(Optional.of(task));
+
+        assertThrows(UnauthorizedActionException.class,
+                () -> taskService.updateStatus(1, "DONE"));
+    }
+
+    // ─── auth ────────────────────────────────────────────────────────────────────
+
+    @Test
     void shouldThrowWhenUserNotAuthenticated() {
         when(authentication.isAuthenticated()).thenReturn(false);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        assertThrows(UserNotFoundException.class,
+                () -> taskService.listTask());
+    }
+
+    @Test
+    void shouldThrowWhenPrincipalIsNotCustomUserDetails() {
+        when(authentication.isAuthenticated()).thenReturn(true);
+        when(authentication.getPrincipal()).thenReturn("anonymousUser");
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         assertThrows(UserNotFoundException.class,
