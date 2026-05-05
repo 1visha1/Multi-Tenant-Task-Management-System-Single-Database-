@@ -2,7 +2,8 @@ name: Deploy Spring Boot to AWS EC2
 
 on:
 push:
-branches: [ "main" ]
+branches:
+- main
 
 jobs:
 build-and-deploy:
@@ -33,8 +34,8 @@ steps:
       host: ${{ secrets.EC2_HOST }}
       username: ${{ secrets.EC2_USER }}
       key: ${{ secrets.EC2_KEY }}
-      source: "app.tar"
-      target: "/home/ubuntu/"
+      source: app.tar
+      target: /home/ubuntu/
 
   - name: Deploy on EC2
     uses: appleboy/ssh-action@v1.0.3
