@@ -17,6 +17,7 @@ steps:
     uses: actions/setup-java@v4
     with:
       java-version: '17'
+      distribution: 'temurin'
 
   - name: Build project
     run: mvn clean package -DskipTests
@@ -34,7 +35,7 @@ steps:
       username: ${{ secrets.EC2_USER }}
       key: ${{ secrets.EC2_KEY }}
       source: "app.tar"
-      target: "/home/ubuntu"
+      target: "/home/ubuntu/"
 
   - name: Deploy on EC2
     uses: appleboy/ssh-action@v1.0.3
@@ -43,7 +44,7 @@ steps:
       username: ${{ secrets.EC2_USER }}
       key: ${{ secrets.EC2_KEY }}
       script: |
-        docker load < app.tar
+        docker load < /home/ubuntu/app.tar
         docker stop app || true
         docker rm app || true
         docker run -d -p 8080:8080 --name app management-app
