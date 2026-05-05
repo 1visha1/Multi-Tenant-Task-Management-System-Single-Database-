@@ -21,7 +21,6 @@ import lombok.NoArgsConstructor;
 @Data
 @Entity
 @Table(name = "users")
-@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 public class User {
 	@Id
 	@GeneratedValue

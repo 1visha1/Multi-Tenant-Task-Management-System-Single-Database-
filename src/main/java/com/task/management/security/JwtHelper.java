@@ -22,10 +22,9 @@ public class JwtHelper {
     private static final Logger logger = LoggerFactory.getLogger(JwtHelper.class);
 
     // requirement :
-    public static final long JWT_TOKEN_VALIDITY = 24 * 60 * 60;// 24 hours
+    public static final long JWT_TOKEN_VALIDITY_SECONDS = 24L * 60 * 60;// 24 hours
     
 
-//     public static final long JWT_TOKEN_VALIDITY = 60;
     @Value("${jwt.secret}")
     private String secret;
 
@@ -65,7 +64,6 @@ public class JwtHelper {
         try {
             return Jwts.parser().setSigningKey(secret).parseClaimsJws(token).getBody();
         } catch (Exception e) {
-            logger.error("Error parsing JWT token", e);
             throw e;
         }
     }
@@ -114,7 +112,7 @@ public class JwtHelper {
     // compaction of the JWT to a URL-safe string
     private String doGenerateToken(Map<String, Object> claims, String subject) {
         String token = Jwts.builder().setClaims(claims).setSubject(subject).setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + JWT_TOKEN_VALIDITY * 1000))
+                .setExpiration(new Date(System.currentTimeMillis() + JWT_TOKEN_VALIDITY_SECONDS * 1000))
                 .signWith(SignatureAlgorithm.HS512, secret).compact();
 
         logger.info("Generated JWT token for subject: {}", subject);

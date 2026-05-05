@@ -21,7 +21,6 @@ import lombok.RequiredArgsConstructor;
 @NoArgsConstructor
 @Data
 @Builder
-@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 public class Tenant {
 	
 	@Id

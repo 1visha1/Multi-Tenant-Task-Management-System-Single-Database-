@@ -14,8 +14,6 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import com.task.management.security.JwtAuthenticationEntryPoint;
 import com.task.management.security.JwtAuthenticationFilter;
-import com.task.management.security.TenantFilter;
-
 import org.springframework.http.HttpMethod;
 
 
@@ -28,14 +26,12 @@ public class SecurityConfig {
     
     private JwtAuthenticationEntryPoint point;
     private JwtAuthenticationFilter filter;
-    private TenantFilter tenantFilter; 
     
     SecurityConfig(JwtAuthenticationEntryPoint point,
-            JwtAuthenticationFilter filter,
-            TenantFilter tenantFilter) {
+            JwtAuthenticationFilter filter
+         ) {
 				 this.point = point;
 				 this.filter = filter;
-				 this.tenantFilter = tenantFilter;
 				 logger.info("SecurityConfig initialized");
 			}
 
@@ -70,7 +66,6 @@ public class SecurityConfig {
 	            });
 	
 	        http.addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class);
-	        http.addFilterAfter(tenantFilter, JwtAuthenticationFilter.class);
 	        logger.info("JWT authentication filter registered");
 	
 	        return http.build();

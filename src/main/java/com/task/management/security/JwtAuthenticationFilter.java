@@ -1,5 +1,7 @@
 package com.task.management.security;
 import java.io.IOException;
+
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -17,9 +19,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 @Component
+@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private static final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     
     private JwtHelper jwtHelper;
@@ -31,48 +33,82 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 	}
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain)
             throws ServletException, IOException {
 
-        String requestHeader = request.getHeader("Authorization");
+        String token = extractToken(request);
 
-        String email = null;
-        String token = null;
+        if (token != null) {
+            String email = extractEmail(token);
 
-        if (requestHeader != null && requestHeader.startsWith("Bearer ")) {
-            token = requestHeader.substring(7);
-            try {
-                email = this.jwtHelper.getUsernameFromToken(token); // Extract email from token
-                logger.debug("Extracted email from token: {}", email);
-            } catch (IllegalArgumentException e) {
-                logger.warn("Illegal argument while fetching email from token", e);
-            } catch (ExpiredJwtException e) {
-                logger.warn("JWT token is expired", e);
-            } catch (MalformedJwtException e) {
-                logger.warn("Invalid JWT token", e);
-            } catch (Exception e) {
-                logger.error("Unexpected error while processing JWT token", e);
+            if (email != null && isNotAuthenticated()) {
+                authenticateUser(email, token, request);
             }
         } else {
-            logger.info("Invalid Authorization header value or header missing");
-        }
-
-        if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = this.userDetailsService.loadUserByUsername(email);
-            Boolean validateToken = this.jwtHelper.validateToken(token, userDetails);
-            if (validateToken) {
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-                logger.info("JWT Token validated successfully, authentication set for user: {}", email);
-            } else {
-                logger.info("JWT Token validation failed for user: {}", email);
-            }
+            log.info("Invalid Authorization header value or header missing");
         }
 
         filterChain.doFilter(request, response);
     }
+
+    private String extractToken(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+
+        if (header == null || !header.startsWith("Bearer ")) {
+            return null;
+        }
+
+        return header.substring(7);
+    }
+
+    private String extractEmail(String token) {
+        try {
+            String email = jwtHelper.getUsernameFromToken(token);
+            log.debug("Extracted email from token: {}", email);
+            return email;
+
+        } catch (IllegalArgumentException e) {
+            log.warn("Illegal argument while fetching email from token", e);
+        } catch (io.jsonwebtoken.ExpiredJwtException e) {
+            log.warn("JWT token is expired", e);
+        } catch (io.jsonwebtoken.MalformedJwtException e) {
+            log.warn("Invalid JWT token", e);
+        } catch (Exception e) {
+            log.error("Unexpected error while processing JWT token", e);
+        }
+
+        return null;
+    }
+
+    private boolean isNotAuthenticated() {
+        return SecurityContextHolder.getContext().getAuthentication() == null;
+    }
+
+    private void authenticateUser(String email, String token, HttpServletRequest request) {
+
+        UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+
+        if (jwtHelper.validateToken(token, userDetails)) {
+
+            UsernamePasswordAuthenticationToken authentication =
+                    new UsernamePasswordAuthenticationToken(
+                            userDetails, null, userDetails.getAuthorities());
+
+            authentication.setDetails(
+                    new WebAuthenticationDetailsSource().buildDetails(request));
+
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+
+            log.info("JWT Token validated successfully, authentication set for user: {}", email);
+
+        } else {
+            log.info("JWT Token validation failed for user: {}", email);
+        }
+    }
+
+
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getServletPath();

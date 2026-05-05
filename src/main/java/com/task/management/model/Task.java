@@ -18,7 +18,6 @@ import lombok.NoArgsConstructor;
 @Builder
 @Data
 @Entity
-@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 public class Task {
 	@Id
 	@GeneratedValue

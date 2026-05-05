@@ -2,6 +2,7 @@ package com.task.management.service;
 
 import java.util.List;
 
+import com.task.management.exception.UserNotFoundException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -10,7 +11,6 @@ import org.springframework.stereotype.Service;
 import com.task.management.repository.TaskRepository;
 import com.task.management.exception.TaskNotFoundException;
 import com.task.management.exception.UnauthorizedActionException;
-import com.task.management.exception.UserNotAuthenticatedException;
 import com.task.management.io.CustomUserDetails;
 import com.task.management.io.NewTask;
 import com.task.management.model.Task;
@@ -23,79 +23,137 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RequiredArgsConstructor
 public class TaskService {
-	
-	private final TaskRepository taskRepository;
-	private final UserService userService;
-	
-	private CustomUserDetails getCurrentUser() {
-	    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
-	    if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-	        throw new RuntimeException("User not authenticated");
-	    }
+    private final TaskRepository taskRepository;
+    private final UserService userService;
 
-	    return (CustomUserDetails) authentication.getPrincipal();
-	}
-	
-	public void newTask(NewTask newTask) {
-		
-		
+    private CustomUserDetails getCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
-	    CustomUserDetails currentUser = getCurrentUser();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new UserNotFoundException("User not authenticated");
+        }
 
-	    Task task = Task.builder()
-	            .tenantId(currentUser.getTenantId())
-	            .title(newTask.getTitle())
-	            .description(newTask.getDescription())
-	            .status(newTask.getStatus())
-	            .build();
+        if (!(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            throw new UserNotFoundException("Invalid user context");
+        }
 
-	    taskRepository.save(task);
-	}
+        return (CustomUserDetails) authentication.getPrincipal();
+    }
 
-	public List<Task> listTask() {
+    public void newTask(NewTask newTask) {
 
-	    CustomUserDetails currentUser = getCurrentUser();
+        if (newTask == null) {
+            throw new IllegalArgumentException("Task request cannot be null");
+        }
 
-	    return taskRepository.findByTenantId(currentUser.getTenantId());
-	}
-	
-	public void assignTask(Integer userId, Integer taskId) {
+        if (newTask.getTitle() == null || newTask.getTitle().trim().isEmpty()) {
+            throw new IllegalArgumentException("Task title is required");
+        }
 
-	    if (!userService.isUserExists(userId)) {
-	        throw new UsernameNotFoundException("User not exists");
-	    }
+        if (newTask.getStatus() == null || newTask.getStatus().trim().isEmpty()) {
+            throw new IllegalArgumentException("Task status is required");
+        }
 
-	    Task task = taskRepository.findById(taskId)
-	            .orElseThrow(() -> new TaskNotFoundException("Task not found"));
+        CustomUserDetails currentUser = getCurrentUser();
 
-	    task.setAssignedTo(userId);
+        Task task = Task.builder()
+                .tenantId(currentUser.getTenantId())
+                .title(newTask.getTitle().trim())
+                .description(newTask.getDescription() != null ? newTask.getDescription().trim() : null)
+                .status(newTask.getStatus().trim())
+                .build();
 
-	    taskRepository.save(task);
-	}
-	
+        taskRepository.save(task);
+        log.info("New task created for tenantId: {}", currentUser.getTenantId());
+    }
 
-	public void updateStatus(Integer taskId, String status) {
+    public List<Task> listTask() {
 
-	    CustomUserDetails currentUser = getCurrentUser();
+        CustomUserDetails currentUser = getCurrentUser();
 
-	    User user = userService.findByUserEmail(currentUser.getUsername());
+        List<Task> tasks = taskRepository.findByTenantId(currentUser.getTenantId());
 
-	    Task task = taskRepository.findById(taskId)
-	            .orElseThrow(() -> new RuntimeException("Task not found"));
+        if (tasks == null || tasks.isEmpty()) {
+            log.warn("No tasks found for tenantId: {}", currentUser.getTenantId());
+        }
 
-	    if (!task.getTenantId().equals(currentUser.getTenantId())) {
-	        throw new UnauthorizedActionException("Cross-tenant access denied");
-	    }
+        return tasks;
+    }
 
-	    if (!user.getId().equals(task.getAssignedTo())) {
-	        throw new UnauthorizedActionException("You are not allowed to update this task");
-	    }
+    public void assignTask(Integer userId, Integer taskId) {
 
-	    task.setStatus(status);
-	    taskRepository.save(task);
-	}
-	
+        if (userId == null) {
+            throw new IllegalArgumentException("UserId cannot be null");
+        }
+
+        if (taskId == null) {
+            throw new IllegalArgumentException("TaskId cannot be null");
+        }
+
+        if (!userService.isUserExists(userId)) {
+            throw new UsernameNotFoundException("User does not exist");
+        }
+
+        CustomUserDetails currentUser = getCurrentUser();
+
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new TaskNotFoundException("Task not found"));
+
+        // Tenant validation (important for multi-tenant systems)
+        if (!task.getTenantId().equals(currentUser.getTenantId())) {
+            throw new UnauthorizedActionException("Cross-tenant task assignment not allowed");
+        }
+
+        // Optional: prevent reassignment without rules
+        if (task.getAssignedTo() != null && task.getAssignedTo().equals(userId)) {
+            log.warn("Task {} is already assigned to user {}", taskId, userId);
+            return;
+        }
+
+        task.setAssignedTo(userId);
+        taskRepository.save(task);
+
+        log.info("Task {} assigned to user {}", taskId, userId);
+    }
+
+    public void updateStatus(Integer taskId, String status) {
+
+        if (taskId == null) {
+            throw new IllegalArgumentException("TaskId cannot be null");
+        }
+
+        if (status == null || status.trim().isEmpty()) {
+            throw new IllegalArgumentException("Status cannot be empty");
+        }
+
+        CustomUserDetails currentUser = getCurrentUser();
+
+        User user = userService.findByUserEmail(currentUser.getUsername());
+        if (user == null) {
+            throw new UserNotFoundException("Logged-in user not found");
+        }
+
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new TaskNotFoundException("Task not found"));
+
+        // Tenant validation
+        if (!task.getTenantId().equals(currentUser.getTenantId())) {
+            throw new UnauthorizedActionException("Cross-tenant access denied");
+        }
+
+        // Assignment validation
+        if (task.getAssignedTo() == null) {
+            throw new UnauthorizedActionException("Task is not assigned to any user");
+        }
+
+        if (!user.getId().equals(task.getAssignedTo())) {
+            throw new UnauthorizedActionException("You are not allowed to update this task");
+        }
+
+        task.setStatus(status.trim());
+        taskRepository.save(task);
+
+        log.info("Task {} status updated to {}", taskId, status);
+    }
 }
-
-
